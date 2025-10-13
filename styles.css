@@ -171,7 +171,7 @@ canvas{display:block; width:100%}
 
 /* === DOM/Table Heatmap === */
 .heatmap-dom { overflow-x: auto; overflow-y: visible; }
-.heatmap-table { border-collapse: collapse; table-layout: fixed; width: 100%; }
+.heatmap-table { border-collapse: collapse; table-layout: auto; width: 100%; }
 .heatmap-table caption { text-align: left; font-size: 0.9rem; color: var(--muted); margin-bottom: .25rem; }
 .heatmap-table th, .heatmap-table td { border: 1px solid rgba(17,24,39,.18); padding: 0; position: relative; }
 .heatmap-table thead th, .heatmap-table tfoot th { 
