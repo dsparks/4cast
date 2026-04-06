@@ -15,13 +15,19 @@ const els = {
     precip: document.getElementById('chart-precip'),
     wind: document.getElementById('chart-wind'),
     runindex: document.getElementById('chart-runindex'),
-    press: document.getElementById('chart-press'),
+    heatmap: document.getElementById('chart-heatmap'),
   },
   sunFacet: document.getElementById('facet-sun'),
   sunTable: document.getElementById('suntimes-table'),
 };
 
 let CROSSHAIR_TS = null;
+let CURRENT_LAT = null;
+let CURRENT_LON = null;
+let resizeHandlerBound = false;
+let mobileFacetStateReady = false;
+let lastViewportIsMobile = null;
+const MOBILE_BP = 720;
 
 // === Sun Times helpers ===
 const localTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -104,6 +110,112 @@ function renderSunTable(days, lat, lon){
 
 let charts = {};
 let lastSeries = null;
+
+function isMobileViewport(){
+  return window.innerWidth <= MOBILE_BP;
+}
+
+function canvasHeightForKey(key){
+  const mobileHeights = {
+    temp: 230,
+    hcp: 190,
+    precip: 150,
+    wind: 170,
+    runindex: 190,
+    heatmap: 300,
+  };
+  const desktopHeights = {
+    temp: 150,
+    hcp: 120,
+    precip: 95,
+    wind: 120,
+    runindex: 150,
+    heatmap: 260,
+  };
+  const heights = isMobileViewport() ? mobileHeights : desktopHeights;
+  return heights[key] || 140;
+}
+
+function applyResponsiveCanvasHeights(){
+  Object.entries(els.canvases).forEach(([key, canvas]) => {
+    if (!canvas) return;
+    canvas.setAttribute('height', String(canvasHeightForKey(key)));
+  });
+}
+
+function getCanvasWidth(canvas){
+  const parent = canvas.parentElement;
+  if (!parent) return 900;
+  const baseWidth = Math.max(320, Math.floor(parent.clientWidth - 20));
+  if (canvas.id === 'chart-heatmap'){
+    return Math.max(baseWidth, isMobileViewport() ? 980 : 900);
+  }
+  return baseWidth;
+}
+
+function tickLabelFromValue(value, scale){
+  const label = scale?.getLabelForValue ? scale.getLabelForValue(value) : value;
+  const ms = label instanceof Date ? label.getTime() : label;
+  return Number.isFinite(ms) ? ms : Date.parse(label);
+}
+
+function timeTickCallback(stepHours){
+  return function(value){
+    const ms = tickLabelFromValue(value, this);
+    if (!Number.isFinite(ms)) return '';
+    const hour = new Date(ms).getHours();
+    return hour % stepHours === 0 ? fmtHourShort(hour) : '';
+  };
+}
+
+function timeScaleOptions(color, mobileStep = 4){
+  return {
+    type: 'time',
+    time: { unit: 'hour' },
+    ticks: {
+      color,
+      autoSkip: false,
+      maxRotation: 0,
+      minRotation: 0,
+      padding: 6,
+      callback: timeTickCallback(isMobileViewport() ? mobileStep : 3),
+    },
+    grid: { color: getCSS('--grid') }
+  };
+}
+
+function setFacetExpanded(facet, expanded){
+  facet.classList.toggle('is-open', expanded);
+  const toggle = facet.querySelector('.facet-toggle');
+  if (toggle) toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+}
+
+function syncMobileFacetState(){
+  const mobile = isMobileViewport();
+  const viewportChanged = lastViewportIsMobile !== mobile;
+  document.querySelectorAll('[data-mobile-collapsible="true"]').forEach(facet => {
+    if (!mobileFacetStateReady || viewportChanged){
+      const wantsOpen = (facet.dataset.mobileDefault || 'open') !== 'closed';
+      setFacetExpanded(facet, mobile ? wantsOpen : true);
+      return;
+    }
+    if (!mobile) setFacetExpanded(facet, true);
+  });
+  lastViewportIsMobile = mobile;
+  mobileFacetStateReady = true;
+}
+
+function initFacetToggles(){
+  document.querySelectorAll('.facet-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const facet = btn.closest('.facet');
+      if (!facet) return;
+      const shouldOpen = !facet.classList.contains('is-open');
+      setFacetExpanded(facet, shouldOpen);
+    });
+  });
+  syncMobileFacetState();
+}
 
 const c2f = c => (c == null ? null : (c * 9) / 5 + 32);
 const mm2in = mm => (mm == null ? null : mm / 25.4);
@@ -454,8 +566,7 @@ function destroyAllCharts(){
 
 
 function sizeCanvasToParent(canvas){
-  const parent = canvas.parentElement;
-  const width = Math.floor(parent.clientWidth - 20);
+  const width = getCanvasWidth(canvas);
   const height = parseInt(canvas.getAttribute('height'), 10);
   canvas.width = width;
   canvas.height = height;
@@ -523,16 +634,14 @@ async function loadByLatLon(lat, lon) {
 
 function buildAllCharts(series){
   destroyAllCharts();
+  applyResponsiveCanvasHeights();
+  syncMobileFacetState();
   Object.values(els.canvases).forEach(c => c && sizeCanvasToParent(c));
   const labels = series.tAxis;
   // Render DOM heatmap (table)
   const heatHost = document.getElementById('heatmapDom');
   if (heatHost) renderHeatmapDOM(heatHost, series);
   if (els.canvases.heatmap){ renderHeatmap(els.canvases.heatmap, series); }
-
-
-  const baseTitle = items => fmtHour(labels[items[0].dataIndex]);
-
   charts.temp = makeFacetChart(els.canvases.temp, {
     labels, nightBands: series.nightBands, dayDivs: series.dayDivs, dateCenters: series.dateCenters, showDateLabels: true,
     datasets: [
@@ -540,7 +649,7 @@ function buildAllCharts(series){
       { label:'Dew Point (°F)', data: series.dewpoint, borderColor:getCSS('--dew'), backgroundColor:'transparent', yAxisID:'y', tension:0.3, pointRadius:0, spanGaps:true },
     ],
     scales: {
-      x: { type:'time', time:{ unit:'hour' }, ticks:{ color:'#6b7280' }, grid:{ color:getCSS('--grid') } },
+      x: timeScaleOptions('#6b7280', 6),
       y: { position:'left', ticks:{ color:getCSS('--temp') }, grid:{ color:getCSS('--grid') } }
     }
   });
@@ -557,7 +666,7 @@ function buildAllCharts(series){
     tension:0.2, pointRadius:0, spanGaps:true, fill:true }
 ],
     scales: {
-      x: { type:'time', time:{ unit:'hour' }, ticks:{ color:'#6b7280' }, grid:{ color:getCSS('--grid') } },
+      x: timeScaleOptions('#6b7280', 6),
       y: { position:'left', min:0, max:100, ticks:{ color:'#6b7280' }, grid:{ color:getCSS('--grid') } }
     }
   });
@@ -568,7 +677,7 @@ function buildAllCharts(series){
       { label:'Hourly Liquid (in)', data: series.qpfHourly, type:'bar', yAxisID:'y', backgroundColor:getCSS('--qpf'), borderWidth:0 },
     ],
     scales: {
-      x: { type:'time', time:{ unit:'hour' }, ticks:{ color:'#6b7280' }, grid:{ color:getCSS('--grid') } },
+      x: timeScaleOptions('#6b7280', 6),
       y: { position:'left', ticks:{ color:getCSS('--qpf') }, grid:{ color:getCSS('--grid') } }
     }
   });
@@ -589,7 +698,7 @@ function buildAllCharts(series){
       { label:'Wind (mph)', data: series.wind, borderColor:getCSS('--wind'), backgroundColor:'transparent', yAxisID:'y', tension:0.2, pointRadius:2, spanGaps:true },
     ],
     scales: {
-      x: { type:'time', time:{ unit:'hour' }, ticks:{ color:'#6b7280' }, grid:{ color:getCSS('--grid') } },
+      x: timeScaleOptions('#6b7280', 6),
       y: { position:'left', ticks:{ color:getCSS('--wind') }, grid:{ color:getCSS('--grid') } }
     }
   });
@@ -604,7 +713,7 @@ function buildAllCharts(series){
         backgroundColor:'transparent', yAxisID:'y', tension:0.3, pointRadius:0, spanGaps:true },
     ],
     scales: {
-      x: { type:'time', time:{ unit:'hour' }, ticks:{ color:'#6b7280' }, grid:{ color:getCSS('--grid') } },
+      x: timeScaleOptions('#6b7280', 6),
       y: { position:'left', min:0, max:100, ticks:{ color:getCSS('--run') }, grid:{ color:getCSS('--grid') } }
     }
   });
@@ -634,17 +743,26 @@ function buildAllCharts(series){
     const cv = charts[key].canvas;
     cv.addEventListener('mousemove', moveFromCanvas(key));
     cv.addEventListener('touchmove', moveFromCanvas(key), { passive:true });
+    cv.addEventListener('touchstart', moveFromCanvas(key), { passive:true });
   }
 
   // Handle window resize
-  window.addEventListener('resize', () => {
+  if (!resizeHandlerBound) window.addEventListener('resize', () => {
+    applyResponsiveCanvasHeights();
+    syncMobileFacetState();
     for (const [k,canvas] of Object.entries(els.canvases)){
       if (!canvas) continue;
       sizeCanvasToParent(canvas);
       charts[k]?.resize(canvas.width, canvas.height);
       charts[k]?.update('none');
     }
+    if (lastSeries){
+      const host = document.getElementById('heatmapDom');
+      if (host) renderHeatmapDOM(host, lastSeries);
+      if (els.canvases.heatmap) renderHeatmap(els.canvases.heatmap, lastSeries);
+    }
   });
+  resizeHandlerBound = true;
 }
 
 function getCSS(varName){ return getComputedStyle(document.documentElement).getPropertyValue(varName).trim(); }
@@ -1016,5 +1134,8 @@ els.form.addEventListener('submit', async (e) => {
   }
 });
 els.myLocBtn.addEventListener('click', () => useBrowserLocation());
+
+initFacetToggles();
+applyResponsiveCanvasHeights();
 
 useBrowserLocation();
