@@ -175,22 +175,42 @@ function timeTickCallback(stepHours){
   };
 }
 
+function buildDisplayedTicks(scale, stepHours){
+  const source = scale.getDataTimestamps ? scale.getDataTimestamps() : [];
+  const unique = [];
+  const seen = new Set();
+  source.forEach(ts => {
+    if (!seen.has(ts)){
+      seen.add(ts);
+      unique.push(ts);
+    }
+  });
+  return unique
+    .filter(ts => {
+      const d = new Date(ts);
+      return d.getHours() === 0 || d.getHours() % stepHours === 0;
+    })
+    .map(ts => ({ value: ts }));
+}
+
 function timeScaleOptions(color, mobileStep = 4){
+  const stepHours = isMobileViewport() ? mobileStep : 3;
   return {
     type: 'time',
     time: { unit: 'hour' },
+    afterBuildTicks(scale){
+      scale.ticks = buildDisplayedTicks(scale, stepHours);
+    },
     ticks: {
-      source: 'data',
       color,
-      autoSkip: true,
-      maxTicksLimit: isMobileViewport() ? 8 : 18,
+      autoSkip: false,
       maxRotation: 0,
       minRotation: 0,
       padding: 10,
       font: {
         size: isMobileViewport() ? 10 : 11,
       },
-      callback: timeTickCallback(isMobileViewport() ? mobileStep : 3),
+      callback: timeTickCallback(stepHours),
     },
     grid: { color: getCSS('--grid') }
   };
