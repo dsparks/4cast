@@ -163,7 +163,11 @@ function timeTickCallback(stepHours){
   return function(value){
     const ms = tickLabelFromValue(value, this);
     if (!Number.isFinite(ms)) return '';
-    const hour = new Date(ms).getHours();
+    const d = new Date(ms);
+    const hour = d.getHours();
+    if (hour === 0){
+      return d.toLocaleDateString([], { weekday:'short', month:'numeric', day:'numeric' });
+    }
     return hour % stepHours === 0 ? fmtHourShort(hour) : '';
   };
 }

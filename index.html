@@ -54,6 +54,7 @@
           <span class="facet-toggle-label">Run Index</span>
         </button>
         <div class="facet-body" id="facet-body-run">
+          <div class="facet-title"><span>Run Index</span></div>
           <canvas id="chart-runindex" width="900" height="150" aria-label="Run Index (0-100)"></canvas>
         </div>
       </div>
@@ -67,17 +68,12 @@
         </div>
       </div>
 
-      <div class="facet is-collapsible is-open" data-facet="heatmap-dom" data-mobile-collapsible="true" data-mobile-default="closed">
-        <button class="facet-toggle" type="button" aria-expanded="true" aria-controls="facet-body-heatmap">
-          <span class="facet-toggle-label">Hourly Heatmaps</span>
-        </button>
-        <div class="facet-body" id="facet-body-heatmap">
-          <div class="facet-title"><span>Table Heatmap</span> - temperature color, PoP occlusion</div>
-          <div id="heatmapDom" class="heatmap-dom" aria-label="Hourly heatmap (table)"></div>
-          <div class="facet-title heatmap-canvas-title"><span>Canvas Heatmap</span> - temperature color, PoP occlusion</div>
-          <div class="heatmap-canvas-wrap">
-            <canvas id="chart-heatmap" width="900" height="260" aria-label="Hourly heatmap with precipitation occlusion"></canvas>
-          </div>
+      <div class="facet" data-facet="heatmap-dom">
+        <div class="facet-title"><span>Table Heatmap</span> - temperature color, PoP occlusion</div>
+        <div id="heatmapDom" class="heatmap-dom" aria-label="Hourly heatmap (table)"></div>
+        <div class="facet-title heatmap-canvas-title"><span>Canvas Heatmap</span> - temperature color, PoP occlusion</div>
+        <div class="heatmap-canvas-wrap">
+          <canvas id="chart-heatmap" width="900" height="260" aria-label="Hourly heatmap with precipitation occlusion"></canvas>
         </div>
       </div>
     </section>
