@@ -166,7 +166,10 @@ function timeTickCallback(stepHours){
     const d = new Date(ms);
     const hour = d.getHours();
     if (hour === 0){
-      return d.toLocaleDateString([], { weekday:'short', month:'numeric', day:'numeric' });
+      return [
+        d.toLocaleDateString([], { weekday:'short' }),
+        d.toLocaleDateString([], { month:'numeric', day:'numeric' }),
+      ];
     }
     return hour % stepHours === 0 ? fmtHourShort(hour) : '';
   };
@@ -177,11 +180,16 @@ function timeScaleOptions(color, mobileStep = 4){
     type: 'time',
     time: { unit: 'hour' },
     ticks: {
+      source: 'data',
       color,
-      autoSkip: false,
+      autoSkip: true,
+      maxTicksLimit: isMobileViewport() ? 8 : 18,
       maxRotation: 0,
       minRotation: 0,
-      padding: 6,
+      padding: 10,
+      font: {
+        size: isMobileViewport() ? 10 : 11,
+      },
       callback: timeTickCallback(isMobileViewport() ? mobileStep : 3),
     },
     grid: { color: getCSS('--grid') }
