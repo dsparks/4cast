@@ -2,82 +2,140 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Forecast (NWS) - WUnderground Facets</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Client-side NWS forecast viewer with WUnderground-style facets, night shading, crosshair, and date labels." />
+  <title>24×7</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="description" content="Your week of weather, one screen. A 24×7 hourly temperature and rain grid." />
+  <meta name="theme-color" content="#0b0e14" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="24×7" />
   <link rel="stylesheet" href="styles.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">Forecast</div>
-    <form id="searchForm" class="search" autocomplete="off">
-      <input id="searchInput" type="text" placeholder="Search city, state or ZIP..." aria-label="Search city, state or ZIP" />
-      <button type="submit" title="Search">Search</button>
-      <button type="button" id="useMyLocation" title="Use my location" aria-label="Use my location">Locate</button>
-    </form>
-  </header>
+  <!-- Full-bleed grid lives here; built by app.js -->
+  <div id="grid" class="grid" aria-label="Hourly weather grid"></div>
 
-  <main>
-    <section class="meta">
-      <div id="placeName" class="place">-</div>
-      <div id="updatedAt" class="updated">-</div>
-    </section>
+  <!-- Precipitation particle layer, drawn over the grid -->
+  <canvas id="fx" class="fx" aria-hidden="true"></canvas>
 
-    <section id="dayStrip" class="day-strip" aria-label="Daily overview cards (daytime periods)"></section>
-    <div id="hoverReadout" class="hover-readout" aria-live="polite"></div>
+  <!-- Tap-a-cell readout -->
+  <div id="tip" class="tip" role="status" aria-live="polite" hidden></div>
 
-    <section id="facetWrap" class="facet-wrap">
-      <div class="facet" data-facet="temp">
-        <div class="facet-title"><span class="temp">Temperature</span> / <span class="dew">Dew Point</span> (°F)</div>
-        <canvas id="chart-temp" width="900" height="150" aria-label="Temperature and dew point"></canvas>
-      </div>
+  <!-- Color legend (shows on palette/view change and long-press) -->
+  <div id="legend" class="legend" aria-hidden="true" hidden>
+    <span class="lo"></span>
+    <div class="bar"></div>
+    <span class="hi"></span>
+  </div>
 
-      <div class="facet" data-facet="hcp">
-        <div class="facet-title"><span class="humid">Humidity</span> / <span class="cloud">Cloud Cover</span> / <span class="pop">Chance of Precip</span> (%)</div>
-        <canvas id="chart-hcp" width="900" height="120" aria-label="Humidity, Cloud Cover, PoP"></canvas>
-      </div>
+  <!-- Settings sheet -->
+  <div id="settings" class="sheet" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet-card" role="dialog" aria-modal="true" aria-label="Settings">
+      <header class="sheet-head">
+        <h1 id="appName">24×7</h1>
+        <button class="x" type="button" data-close aria-label="Close settings">✕</button>
+      </header>
 
-      <div class="facet" data-facet="precip">
-        <div class="facet-title"><span class="qpf">Precipitation</span> (in)</div>
-        <canvas id="chart-precip" width="900" height="95" aria-label="Hourly liquid precipitation"></canvas>
-      </div>
+      <div class="sheet-body">
+        <div class="place-row">
+          <div>
+            <div class="place" id="placeName">—</div>
+            <div class="place-sub" id="placeSub">Locating…</div>
+          </div>
+          <button class="btn" type="button" id="geoBtn" title="Use my location">📍 Locate</button>
+        </div>
 
-      <div class="facet" data-facet="wind">
-        <div class="facet-title"><span class="wind">Wind Speed</span> (mph)</div>
-        <canvas id="chart-wind" width="900" height="120" aria-label="Wind speed"></canvas>
-      </div>
+        <form id="searchForm" class="field search-field" autocomplete="off">
+          <label>Set location</label>
+          <div class="search-row">
+            <input id="searchInput" type="text" placeholder="City, or city, state…" aria-label="Search location" />
+            <button type="submit" class="btn">Go</button>
+          </div>
+          <ul id="searchResults" class="results" hidden></ul>
+        </form>
 
-      <div class="facet is-collapsible is-open" data-facet="run" data-mobile-collapsible="true" data-mobile-default="open">
-        <button class="facet-toggle" type="button" aria-expanded="true" aria-controls="facet-body-run">
-          <span class="facet-toggle-label">Run Index</span>
-        </button>
-        <div class="facet-body" id="facet-body-run">
-          <div class="facet-title"><span>Run Index</span></div>
-          <canvas id="chart-runindex" width="900" height="150" aria-label="Run Index (0-100)"></canvas>
+        <div class="field">
+          <label>View</label>
+          <div class="seg" data-setting="view">
+            <button type="button" data-value="temp">Temp / Rain</button>
+            <button type="button" data-value="run">Run Index</button>
+          </div>
+          <button type="button" class="btn linkbtn" id="runEditBtn">Customize Run Index…</button>
+        </div>
+
+        <div class="field">
+          <label>Temperature units</label>
+          <div class="seg" data-setting="unit">
+            <button type="button" data-value="auto">Auto</button>
+            <button type="button" data-value="f">°F</button>
+            <button type="button" data-value="c">°C</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Clock</label>
+          <div class="seg" data-setting="clock">
+            <button type="button" data-value="auto">Auto</button>
+            <button type="button" data-value="12">12h</button>
+            <button type="button" data-value="24">24h</button>
+          </div>
+        </div>
+
+        <div class="field" data-temp-only>
+          <label>Temperature palette</label>
+          <div class="seg" data-setting="palette">
+            <button type="button" data-value="noaa">NOAA</button>
+            <button type="button" data-value="inferno">Inferno</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Show temperature numbers</label>
+          <div class="seg" data-setting="showNumbers">
+            <button type="button" data-value="true">On</button>
+            <button type="button" data-value="false">Off</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Mist line width <span class="slabel" id="fogWidthVal"></span></label>
+          <input type="range" class="slider" id="fogWidth" min="0.2" max="12" step="0.1" />
+        </div>
+
+        <div class="field">
+          <label>Mist opacity <span class="slabel" id="fogOpacityVal"></span></label>
+          <input type="range" class="slider" id="fogOpacity" min="0" max="0.4" step="0.005" />
         </div>
       </div>
 
-      <div class="facet" data-facet="sun" id="facet-sun">
-        <div class="facet-title"><span class="sun">Sun Times</span></div>
-        <div id="suntimes-table" class="suntimes-table" role="table" aria-label="Sunrise, solar noon, golden hour start, sunset"></div>
-      </div>
+      <footer class="sheet-foot">
+        <span id="updatedAt">—</span>
+        <span class="dot">·</span>
+        <span>Data: Open-Meteo</span>
+      </footer>
+    </div>
+  </div>
 
-      <div class="facet" data-facet="heatmap-dom">
-        <div class="facet-title"><span>Table Heatmap</span> - temperature color, PoP occlusion</div>
-        <div id="heatmapDom" class="heatmap-dom" aria-label="Hourly heatmap (table)"></div>
-        <div class="facet-title heatmap-canvas-title"><span>Canvas Heatmap</span> - temperature color, PoP occlusion</div>
-        <div class="heatmap-canvas-wrap">
-          <canvas id="chart-heatmap" width="900" height="260" aria-label="Hourly heatmap with precipitation occlusion"></canvas>
-        </div>
+  <!-- Run Index curve editor -->
+  <div id="runEditor" class="sheet" hidden>
+    <div class="sheet-backdrop" data-rclose></div>
+    <div class="sheet-card" role="dialog" aria-modal="true" aria-label="Customize Run Index">
+      <header class="sheet-head">
+        <button class="back" type="button" id="runBack" aria-label="Back to settings">‹</button>
+        <h1>Run Index</h1>
+        <button class="x" type="button" data-rclose aria-label="Close">✕</button>
+      </header>
+      <div class="sheet-body">
+        <p class="hint">Drag each point up for better running weather, down for worse. The hourly score is the geometric mean across every dimension — so any one “avoid” sinks it.</p>
+        <div id="runDims"></div>
+        <button type="button" class="btn" id="runReset">Reset to defaults</button>
       </div>
-    </section>
-  </main>
-
-  <footer>
-    <small>Client-side only. Data: NWS/NOAA.</small>
-  </footer>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
